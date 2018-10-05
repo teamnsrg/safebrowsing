@@ -2,7 +2,7 @@ import requests
 import json
 import csv
 
-url = "https://safebrowsing.googleapis.com/v4/threatMatches:find?key="
+url = "127.0.0.1:8080/v4/threatMatches:find"
 
 x = {
 	'threatInfo': {
@@ -16,11 +16,13 @@ entries = [
 ]
 
 #print (entries[0]['url'])
-
+i = 0;
 with open('blacklist-entries.csv') as csvfile:
-    spamreader = csv.reader(csvfile, delimiter=',')
-    next(spamreader)
-    for row in spamreader:
+	spamreader = csv.reader(csvfile, delimiter=',')
+	next(spamreader)
+	for row in spamreader:
+		if (i == 10):
+			break
 		if(row[0][:2] == '//'):
 			newEntry = 	{'url':row[0][2:]}
 			
@@ -29,7 +31,10 @@ with open('blacklist-entries.csv') as csvfile:
 
 		#print(newEntry)	
 		entries.append(newEntry)
+		i = i + 1;
 #print(entries)
 
 x['threatInfo']['threadEntries'] = entries
-print (json.dumps(x))
+request = requests.post(url, params=x)
+print request.txt
+#print (json.dumps(x))
