@@ -74,7 +74,7 @@ def canonical(s):
 	canonical_url = '%s://%s%s' % (protocol, quoted_host, quoted_path)
 	if query is not None:
 		canonical_url = '%s?%s' % (canonical_url, query)
-#	print("canonical url is " + canonical_url)
+	#print("canonical url is " + canonical_url)
 	return canonical_url
 
 def url_host_permutations(host):
@@ -127,7 +127,7 @@ def hashes(url):
 
 
 if __name__ == '__main__':
-	url = "https://safebrowsing.googleapis.com/v4/fullHashes:find?key="
+	url = "https://safebrowsing.googleapis.com/v4/fullHashes:find?key=AIzaSyBU6G2w4ItQUaWMTQCAzgViEX2mN-a1sxc"
 
 	x = {
 			'client':{},
@@ -143,27 +143,37 @@ if __name__ == '__main__':
 
 	entries = [	]
 
+
+	#print (entries[0]['url'])
 	i = 0;
+	send = 0
 	with open('blacklist-entries.csv') as csvfile:
 			spamreader = csv.reader(csvfile, delimiter=',')
 			next(spamreader)
 			for row in spamreader:
-				if (i == 475):
-						break
+				if (i % 496 == 0):
+						send = 1
 				if(row[0][:2] == '//'):
 					inputURL = row[0][2:]
 				else:
 					inputURL = row[0]
 				for permutations in url_permutations(canonical(inputURL)):
 					for hashed in hashes(permutations):
+						#print (hashed[0:4])
 						hashValue = base64.b64encode(hashed[0:4])
 						hashValue.replace('\n', '')
+						#print(hashValue)
 						newEntry = {'hash': hashValue}
 						entries.append(newEntry)
 				i = i + 1;
-	x['threatInfo']['threatEntries'] = entries
-	request = requests.post(url, json=x)
-	print (request.text)
+
+				if send == 1:
+					x['threatInfo']['threatEntries'] = entries
+					request = requests.post(url, json=x)
+#					print(json.dumps(x))
+					print (request.text)
+					send = 0
+					entries = []
 
 
 
