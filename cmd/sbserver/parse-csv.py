@@ -127,13 +127,16 @@ def hashes(url):
 
 
 if __name__ == '__main__':
-	url = "https://safebrowsing.googleapis.com/v4/fullHashes:find?key=AIzaSyBU6G2w4ItQUaWMTQCAzgViEX2mN-a1sxc"
+	url = "https://safebrowsing.googleapis.com/v4/fullHashes:find?key="
 
 	x = {
-			'client':{},
+			'client':{
+			'clientId': 'NSRG',
+			'clientVersion': '1.0'
+			},
 			'clientStates':[],
 			'threatInfo': {
-			'threatTypes': ['THREAT_TYPE_UNSPECIFIED'],
+			'threatTypes': ['MALWARE', 'SOCIAL_ENGINEERING', 'UNWANTED_SOFTWARE', 'POTENTIALLY_HARMFUL_APPLICATION', 'THREAT_TYPE_UNSPECIFIED'],
 			'platformTypes': ['ANY_PLATFORM'],
 			'threatEntryTypes':['URL'],
 			'threatEntries': []
