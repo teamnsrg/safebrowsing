@@ -22,8 +22,8 @@ import csv
 import datetime
 import sys
 
-urlLookup = dict()
-partialHashLookup = dict()
+URL_lookup = dict() #K:Hash, V: URL
+partial_hash_lookup = dict() #K:Hash, V:partial_hash
 
 def full_unescape(u):
 	uu = urllib.unquote(u)
@@ -120,13 +120,12 @@ def url_permutations(url):
 		for p in url_path_permutations(path):
 			u = '%s%s' % (h, p)
 			if u not in seen_permutations:
-				yield u
-
+				yield u			
 				seen_permutations.add(u)
 
 def digest(url):
 	digest = hashlib.sha256(url.encode('utf-8')).digest()
-	urlLookup[base64.b64encode(digest)] = url
+	URL_lookup[base64.b64encode(digest)] = url
 	return digest
 
 def hashes(url):
@@ -155,73 +154,81 @@ if __name__ == '__main__':
 	entries = [	]
 
 
-	i = 0;
-	send = 0
-	with open(sys.argv[2]) as csvfile:
-		with open(sys.argv[3], "w+") as outfile:
-			blacklistWriter = csv.writer(outfile, delimiter=',')
-			blacklistReader = csv.reader(csvfile, delimiter=',')
-			blacklistWriter.writerow(['URL', 'Full Hash', 'Partial Hash', 'UTC Time Stamp', 'Match Type', 'Match Metadata', 'Platform'])
-			next(blacklistReader)
-			for row in blacklistReader:
-				if (i % 200 == 0):
-					send = 1
-				if(row[0][:2] == '//'):
-					inputURL = row[0][2:]
-				else:
-					inputURL = row[0]
-				for permutations in url_permutations(canonical(inputURL)):
-					for hashed in hashes(permutations):
-						hashValue = base64.b64encode(hashed[0:4])
-						partialHashLookup[base64.b64encode(hashed)] = hashValue
-						hashValue.replace('\n', '')
-						newEntry = {'hash': hashValue}
-						entries.append(newEntry)
-				i = i + 1;
 
-				if send == 1:
-					x['threatInfo']['threatEntries'] = entries
-					response = requests.post(url, json=x)
-					responseJSON = json.loads(response.text)
-					if 'matches' in responseJSON:
-						for hits in responseJSON['matches']:
-							if 'threatType' in hits:
-								threatType = hits['threatType']
-							if 'platformType' in hits:
-								platformType = hits['platformType']
-							currentHash = ''
-							if 'threat' in hits:
-								currentHash = hits['threat']['hash']
-							malwareType = ''
-							timestamp = datetime.datetime.utcnow()
-							if 'threatEntryMetadata' in hits:
-								if 'entries' in hits['threatEntryMetadata']:
-									malwareTypeHash = hits['threatEntryMetadata']['entries'][0]['value']
-									if 'TEFORElORw' in malwareTypeHash:
-										malwareType = 'MALWARE LANDING'
-									if 'RElTVFJJQlVUSU9O' in malwareTypeHash:
-										malwareType = 'MALWARE DISTRIBUTION'
+i = 0;
+send = 0
+with open(sys.argv[2]) as csvfile:
+	with open(sys.argv[3], "w+") as outfile:
+		csv_writer = csv.writer(outfile, delimiter=',')
+		blacklist_reader = csv.reader(csvfile, delimiter=',')
+		csv_writer.writerow(['URL', 'Full Hash', 'Partial Hash', 'UTC Time Stamp', 'Match Type', 'Match Metadata', 'Platform'])
+		next(blacklist_reader)
+		for row in blacklist_reader:
+			if (i % 200 == 0):
+				send = 1
+			if(row[0][:2] == '//'):
+				input_URL = row[0][2:]
+			else:
+				input_URL = row[0]
 
-							if currentHash in urlLookup:
-								currentURL = urlLookup[currentHash]
-								urlLookup.pop(currentHash)
-							else:
-								currentURL = ""
+			seen_input_hashes = set()
+			for permutation in url_permutations(canonical(input_URL)):
+				sha256_hash = digest(permutation)
+				if sha256_hash not in seen_input_hashes:
+					partial_hash = base64.b64encode(sha256_hash[0:4])
+					partial_hash_lookup[base64.b64encode(sha256_hash)] = partial_hash
+					new_entry = {'hash': partial_hash}
+					entries.append(new_entry)
+					seen_input_hashes.add(sha256_hash)
+			i = i + 1;
 
-							if currentHash in partialHashLookup:
-								partialHash = partialHashLookup[currentHash]
-								partialHashLookup.pop(currentHash)
-							else:
-								partialHash = ""
-							blacklistWriter.writerow([currentURL, currentHash, partialHash, timestamp, threatType, malwareType, platformType])
-					send = 0
-					entries = []
-			leftovers = urlLookup.items()
-			for extra in leftovers:
-				blacklistWriter.writerow([extra[1], extra[0], partialHashLookup[extra[0]], timestamp, "", "", ""])
+			if send == 1:
+				x['threatInfo']['threatEntries'] = entries
+				response = requests.post(url, json=x)
+				response_JSON = json.loads(response.text)
+				seen_output_hashes = set()
+				if 'matches' in response_JSON:
+					for hits in response_JSON['matches']:
+						if 'threatType' in hits:
+							threat_type = hits['threatType']
+						if 'platformType' in hits:
+							platform_type = hits['platformType']
+						current_hash = ''
+						if 'threat' in hits:
+							current_hash = hits['threat']['hash']
+						timestamp = datetime.datetime.utcnow()
+						malware_type = ''
+						if 'threatEntryMetadata' in hits:
+							if 'entries' in hits['threatEntryMetadata']:
+								malware_type_hash = hits['threatEntryMetadata']['entries'][0]['value']
+								if 'TEFORElORw' in malware_type_hash:
+									malware_type = 'MALWARE LANDING'
+								if 'RElTVFJJQlVUSU9O' in malware_type_hash:
+									malware_type = 'MALWARE DISTRIBUTION'
 
+						if current_hash in URL_lookup:
+							current_URL = URL_lookup[current_hash]
+							URL_lookup.pop(current_hash)
+						else:
+							current_URL = ""
 
-
-
+						if current_hash in partial_hash_lookup:
+							partial_hash = partial_hash_lookup[current_hash]
+							partial_hash_lookup.pop(current_hash)
+						else:
+							decoded_hash = base64.b64decode(current_hash)[0:4]
+							partial_hash = base64.b64encode(decoded_hash)
+						new_row = [current_URL, current_hash, partial_hash, timestamp, threat_type, malware_type, platform_type]
+						if new_row[1] not in seen_output_hashes:
+							csv_writer.writerow(new_row)
+							seen_output_hashes.add(new_row[1])
+				send = 0
+				entries = []
+		leftovers = URL_lookup.items()
+		seen_leftover_hashes = set()
+		for extra in leftovers:
+			if extra[0] not in seen_leftover_hashes:
+				csv_writer.writerow([extra[1], extra[0], partial_hash_lookup[extra[0]], timestamp, "", "", ""])
+			seen_leftover_hashes.add(extra[0])
 
 
