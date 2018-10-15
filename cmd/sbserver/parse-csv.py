@@ -1,3 +1,5 @@
+#Usage python parse-csv.py api-key inputCSV outputCSV
+
 from functools import wraps
 
 try:
@@ -17,6 +19,11 @@ import base64
 import requests
 import json
 import csv
+import datetime
+import sys
+
+urlLookup = dict()
+partialHashLookup = dict()
 
 def full_unescape(u):
 	uu = urllib.unquote(u)
@@ -118,16 +125,17 @@ def url_permutations(url):
 				seen_permutations.add(u)
 
 def digest(url):
-	return hashlib.sha256(url.encode('utf-8')).digest()
+	digest = hashlib.sha256(url.encode('utf-8')).digest()
+	urlLookup[base64.b64encode(digest)] = url
+	return digest
 
 def hashes(url):
-#	print("in hash function, url is " + url)
 	url_hash = digest(url)
 	yield url_hash
 
 
 if __name__ == '__main__':
-	url = "https://safebrowsing.googleapis.com/v4/fullHashes:find?key="
+	url = "https://safebrowsing.googleapis.com/v4/fullHashes:find?key=" + sys.argv[1]
 
 	x = {
 			'client':{
@@ -147,36 +155,72 @@ if __name__ == '__main__':
 	entries = [	]
 
 
-	#print (entries[0]['url'])
 	i = 0;
 	send = 0
-	with open('blacklist-entries.csv') as csvfile:
-			spamreader = csv.reader(csvfile, delimiter=',')
-			next(spamreader)
-			for row in spamreader:
-				if (i % 496 == 0):
-						send = 1
+	with open(sys.argv[2]) as csvfile:
+		with open(sys.argv[3], "w+") as outfile:
+			blacklistWriter = csv.writer(outfile, delimiter=',')
+			blacklistReader = csv.reader(csvfile, delimiter=',')
+			blacklistWriter.writerow(['URL', 'Full Hash', 'Partial Hash', 'UTC Time Stamp', 'Match Type', 'Match Metadata', 'Platform'])
+			next(blacklistReader)
+			for row in blacklistReader:
+				if (i % 200 == 0):
+					send = 1
 				if(row[0][:2] == '//'):
 					inputURL = row[0][2:]
 				else:
 					inputURL = row[0]
 				for permutations in url_permutations(canonical(inputURL)):
 					for hashed in hashes(permutations):
-						#print (hashed[0:4])
 						hashValue = base64.b64encode(hashed[0:4])
+						partialHashLookup[base64.b64encode(hashed)] = hashValue
 						hashValue.replace('\n', '')
-						#print(hashValue)
 						newEntry = {'hash': hashValue}
 						entries.append(newEntry)
 				i = i + 1;
 
 				if send == 1:
 					x['threatInfo']['threatEntries'] = entries
-					request = requests.post(url, json=x)
-#					print(json.dumps(x))
-					print (request.text)
+					response = requests.post(url, json=x)
+					responseJSON = json.loads(response.text)
+					if 'matches' in responseJSON:
+						for hits in responseJSON['matches']:
+							if 'threatType' in hits:
+								threatType = hits['threatType']
+							if 'platformType' in hits:
+								platformType = hits['platformType']
+							currentHash = ''
+							if 'threat' in hits:
+								currentHash = hits['threat']['hash']
+							malwareType = ''
+							timestamp = datetime.datetime.utcnow()
+							if 'threatEntryMetadata' in hits:
+								if 'entries' in hits['threatEntryMetadata']:
+									malwareTypeHash = hits['threatEntryMetadata']['entries'][0]['value']
+									if 'TEFORElORw' in malwareTypeHash:
+										malwareType = 'MALWARE LANDING'
+									if 'RElTVFJJQlVUSU9O' in malwareTypeHash:
+										malwareType = 'MALWARE DISTRIBUTION'
+
+							if currentHash in urlLookup:
+								currentURL = urlLookup[currentHash]
+								urlLookup.pop(currentHash)
+							else:
+								currentURL = ""
+
+							if currentHash in partialHashLookup:
+								partialHash = partialHashLookup[currentHash]
+								partialHashLookup.pop(currentHash)
+							else:
+								partialHash = ""
+							blacklistWriter.writerow([currentURL, currentHash, partialHash, timestamp, threatType, malwareType, platformType])
 					send = 0
 					entries = []
+			leftovers = urlLookup.items()
+			for extra in leftovers:
+				blacklistWriter.writerow([extra[1], extra[0], partialHashLookup[extra[0]], timestamp, "", "", ""])
+
+
 
 
 
