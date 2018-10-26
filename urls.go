@@ -67,7 +67,7 @@ var (
 // URLs, as the first parse failure will cause LookupURLs to stop processing
 // the request and return an error.
 func ValidURL(url string) bool {
-	parsed, err := parseURL(url)
+	parsed, err := ParseURL(url)
 	return parsed != nil && err == nil
 }
 
@@ -275,8 +275,8 @@ func parseHost(hostish string) (host string, err error) {
 	return host, nil
 }
 
-// parseURL parses urlStr as a url.URL and reports an error if not possible.
-func parseURL(urlStr string) (parsedURL *url.URL, err error) {
+// ParseURL parses urlStr as a url.URL and reports an error if not possible.
+func ParseURL(urlStr string) (parsedURL *url.URL, err error) {
 	// For legacy reasons, this is a simplified version of the net/url logic.
 	//
 	// Few cases where net/url was not helpful:
@@ -397,7 +397,7 @@ func canonicalNum(s string, n int) string {
 // canonicalURL parses a URL string and returns it as scheme://hostname/path.
 // It strips off fragments and queries.
 func canonicalURL(u string) (string, error) {
-	parsedURL, err := parseURL(u)
+	parsedURL, err := ParseURL(u)
 	if err != nil {
 		return "", err
 	}
@@ -411,7 +411,7 @@ func canonicalURL(u string) (string, error) {
 }
 
 func canonicalHost(urlStr string) (string, error) {
-	parsedURL, err := parseURL(urlStr)
+	parsedURL, err := ParseURL(urlStr)
 	if err != nil {
 		return "", err
 	}
@@ -459,7 +459,7 @@ func generateLookupHosts(urlStr string) ([]string, error) {
 func canonicalPath(urlStr string) (string, error) {
 	// Note that this function is not used, but remains to ensure that the
 	// parsedURL.Path output matches C++ implementation.
-	parsedURL, err := parseURL(urlStr)
+	parsedURL, err := ParseURL(urlStr)
 	if err != nil {
 		return "", err
 	}
@@ -470,7 +470,7 @@ func canonicalPath(urlStr string) (string, error) {
 func generateLookupPaths(urlStr string) ([]string, error) {
 	const maxPathComponents = 4
 
-	parsedURL, err := parseURL(urlStr)
+	parsedURL, err := ParseURL(urlStr)
 	if err != nil {
 		return nil, err
 	}

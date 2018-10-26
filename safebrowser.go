@@ -517,7 +517,7 @@ func (sb *SafeBrowser) LookupURLsContext(ctx context.Context, urls []string) (th
 	}
 
 	// Actually query the Safe Browsing API for exact full hash matches.
-	entries := make([]*pb.ThreatEntry, 0)
+	entries := make([]*pb.ThreatEntry, len(req.ThreatInfo.ThreatEntries))
 	copy(entries, req.ThreatInfo.ThreatEntries)
 	for currentIndex, totalEntries := 0, len(req.ThreatInfo.ThreatEntries); currentIndex < totalEntries; currentIndex += MaxUpdateAPIBatchSize {
 		entriesToAdd := int(math.Min(float64(MaxUpdateAPIBatchSize), float64(totalEntries-currentIndex)))

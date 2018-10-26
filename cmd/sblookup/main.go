@@ -31,18 +31,21 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
+	pb "github.com/teamnsrg/safebrowsing/internal/safebrowsing_proto"
+	"io/ioutil"
+	"net/http"
+	"net/url"
 	"os"
 
 	"github.com/teamnsrg/safebrowsing"
 )
 
 var (
-	apiKeyFlag    = flag.String("apikey", "", "specify your Safe Browsing API key")
-	databaseFlag  = flag.String("db", "", "path to the Safe Browsing database. By default persistent storage is disabled (not recommended).")
 	serverURLFlag = flag.String("server", safebrowsing.DefaultServerURL, "Safebrowsing API server address.")
-	proxyFlag     = flag.String("proxy", "", "proxy to use to connect to the HTTP server")
 )
 
 const usage = `sblookup: command-line tool to lookup URLs with Safe Browsing.
@@ -68,47 +71,70 @@ const (
 	codeInvalid
 )
 
+const (
+	threatMatchesPath = "/v4/threatMatches:find"
+)
+
 func main() {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, usage, os.Args[0])
 		flag.PrintDefaults()
 	}
 	flag.Parse()
-	if *apiKeyFlag == "" {
-		fmt.Fprintln(os.Stderr, "No -apikey specified")
-		os.Exit(codeInvalid)
-	}
-	sb, err := safebrowsing.NewSafeBrowser(safebrowsing.Config{
-		APIKey:    *apiKeyFlag,
-		DBPath:    *databaseFlag,
-		Logger:    os.Stderr,
-		ServerURL: *serverURLFlag,
-		ProxyURL:  *proxyFlag,
-	})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Unable to initialize Safe Browsing client: ", err)
-		os.Exit(codeInvalid)
-	}
 
 	scanner := bufio.NewScanner(os.Stdin)
 	code := codeSafe
+	threats := make([]*pb.ThreatEntry, 0)
 	for scanner.Scan() {
-		url := scanner.Text()
-		threats, err := sb.LookupURLs([]string{url})
+		inputUrl := scanner.Text()
+		_, err := safebrowsing.ParseURL(inputUrl)
 		if err != nil {
-			fmt.Fprintln(os.Stdout, "Unknown URL:", url)
-			fmt.Fprintln(os.Stderr, "Lookup error:", err)
-			code |= codeFailed
-		} else if len(threats[0]) == 0 {
-			fmt.Fprintln(os.Stdout, "Safe URL:", url)
+			fmt.Fprintln(os.Stdout, err, inputUrl)
 		} else {
-			fmt.Fprintln(os.Stdout, "Unsafe URL:", threats[0])
-			code |= codeUnsafe
+			threats = append(threats, &pb.ThreatEntry{Url: inputUrl})
 		}
 	}
+
 	if scanner.Err() != nil {
 		fmt.Fprintln(os.Stderr, "Unable to read input:", scanner.Err())
 		code |= codeInvalid
 	}
+	reqData := &pb.FindFullHashesRequest{
+		Client: &pb.ClientInfo{
+			ClientId:      "NSRG",
+			ClientVersion: "1.0",
+		},
+		ThreatInfo: &pb.ThreatInfo{
+			PlatformTypes:    []pb.PlatformType{pb.PlatformType_PLATFORM_TYPE_UNSPECIFIED},
+			ThreatTypes:      []pb.ThreatType{pb.ThreatType_THREAT_TYPE_UNSPECIFIED},
+			ThreatEntryTypes: []pb.ThreatEntryType{pb.ThreatEntryType_THREAT_ENTRY_TYPE_UNSPECIFIED},
+			ThreatEntries:    threats,
+		},
+	}
+
+	u, err := url.Parse(*serverURLFlag)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Invalid server URL")
+	}
+	u.Path = threatMatchesPath
+
+	reqJsonBytes, err := json.Marshal(reqData)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Invalid threat info struct")
+	}
+	httpReq, err := http.NewRequest("POST", u.String(), bytes.NewReader(reqJsonBytes))
+	httpReq.Header.Add("Content-Type", "application/json")
+	client := &http.Client{}
+	httpResp, err := client.Do(httpReq)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "HTTP error: %s", err.Error())
+	}
+	defer httpResp.Body.Close()
+
+	fmt.Println("response Status:", httpResp.Status)
+	fmt.Println("response Headers:", httpResp.Header)
+	body, _ := ioutil.ReadAll(httpResp.Body)
+	fmt.Println("response Body:", string(body))
+
 	os.Exit(code)
 }
