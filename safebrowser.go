@@ -77,6 +77,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"math"
 	"sync/atomic"
 	"time"
 
@@ -516,7 +517,12 @@ func (sb *SafeBrowser) LookupURLsContext(ctx context.Context, urls []string) (th
 	}
 
 	// Actually query the Safe Browsing API for exact full hash matches.
-	for remainingEntries := len(req.ThreatInfo.ThreatEntries); remainingEntries > 0; remainingEntries -= MaxUpdateAPIBatchSize {
+	entries := make([]*pb.ThreatEntry, 0)
+	copy(entries, req.ThreatInfo.ThreatEntries)
+	for currentIndex, totalEntries := 0, len(req.ThreatInfo.ThreatEntries); currentIndex < totalEntries; currentIndex += MaxUpdateAPIBatchSize {
+		entriesToAdd := int(math.Min(float64(MaxUpdateAPIBatchSize), float64(totalEntries-currentIndex)))
+		sb.log.Printf("Making update request with %d entries", entriesToAdd)
+		req.ThreatInfo.ThreatEntries = entries[currentIndex : currentIndex+entriesToAdd]
 		resp, err := sb.api.HashLookup(ctx, req)
 		if err != nil {
 			sb.log.Printf("HashLookup failure: %v", err)
