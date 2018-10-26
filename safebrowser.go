@@ -516,44 +516,43 @@ func (sb *SafeBrowser) LookupURLsContext(ctx context.Context, urls []string) (th
 	}
 
 	// Actually query the Safe Browsing API for exact full hash matches.
-	if len(req.ThreatInfo.ThreatEntries) != 0 {
-		for remainingEntries := len(req.ThreatInfo.ThreatEntries); remainingEntries > 0; remainingEntries -= MaxUpdateAPIBatchSize {
-			resp, err := sb.api.HashLookup(ctx, req)
-			if err != nil {
-				sb.log.Printf("HashLookup failure: %v", err)
-				atomic.AddInt64(&sb.stats.QueriesFail, 1)
-				return threats, err
+	for remainingEntries := len(req.ThreatInfo.ThreatEntries); remainingEntries > 0; remainingEntries -= MaxUpdateAPIBatchSize {
+		resp, err := sb.api.HashLookup(ctx, req)
+		if err != nil {
+			sb.log.Printf("HashLookup failure: %v", err)
+			atomic.AddInt64(&sb.stats.QueriesFail, 1)
+			return threats, err
+		}
+
+		// Update the cache.
+		sb.c.Update(req, resp)
+
+		// Pull the information the client cares about out of the response.
+		for _, tm := range resp.GetMatches() {
+			fullHash := hashPrefix(tm.GetThreat().Hash)
+			if !fullHash.IsFull() {
+				continue
 			}
-
-			// Update the cache.
-			sb.c.Update(req, resp)
-
-			// Pull the information the client cares about out of the response.
-			for _, tm := range resp.GetMatches() {
-				fullHash := hashPrefix(tm.GetThreat().Hash)
-				if !fullHash.IsFull() {
+			pattern, ok := hashes[fullHash]
+			idx, findidx := hash2idx[fullHash]
+			if findidx && ok {
+				td := ThreatDescriptor{
+					ThreatType:      ThreatType(tm.ThreatType),
+					PlatformType:    PlatformType(tm.PlatformType),
+					ThreatEntryType: ThreatEntryType(tm.ThreatEntryType),
+				}
+				if !sb.lists[td] {
 					continue
 				}
-				pattern, ok := hashes[fullHash]
-				idx, findidx := hash2idx[fullHash]
-				if findidx && ok {
-					td := ThreatDescriptor{
-						ThreatType:      ThreatType(tm.ThreatType),
-						PlatformType:    PlatformType(tm.PlatformType),
-						ThreatEntryType: ThreatEntryType(tm.ThreatEntryType),
-					}
-					if !sb.lists[td] {
-						continue
-					}
-					threats[idx] = append(threats[idx], URLThreat{
-						Pattern:          pattern,
-						ThreatDescriptor: td,
-					})
-				}
+				threats[idx] = append(threats[idx], URLThreat{
+					Pattern:          pattern,
+					ThreatDescriptor: td,
+				})
 			}
 		}
-		atomic.AddInt64(&sb.stats.QueriesByAPI, 1)
 	}
+	atomic.AddInt64(&sb.stats.QueriesByAPI, 1)
+
 	return threats, nil
 }
 
