@@ -32,10 +32,12 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"flag"
-	"fmt"
 	pb "github.com/teamnsrg/safebrowsing/internal/safebrowsing_proto"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -45,7 +47,8 @@ import (
 )
 
 var (
-	serverURLFlag = flag.String("server", safebrowsing.DefaultServerURL, "Safebrowsing API server address.")
+	serverURLFlag      = flag.String("server", safebrowsing.DefaultServerURL, "Safebrowsing API server address.")
+	outputFilenameFlag = flag.String("output", "sbresults.txt", "Output file for safebrowsing results.")
 )
 
 const usage = `sblookup: command-line tool to lookup URLs with Safe Browsing.
@@ -75,12 +78,22 @@ const (
 	threatMatchesPath = "/v4/threatMatches:find"
 )
 
+var log *zap.SugaredLogger
+
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, usage, os.Args[0])
+		log.Fatal(usage, os.Args[0])
 		flag.PrintDefaults()
 	}
 	flag.Parse()
+
+	atom := zap.NewAtomicLevelAt(zap.InfoLevel)
+	logger := zap.New(zapcore.NewCore(
+		zapcore.NewConsoleEncoder(zap.NewDevelopmentEncoderConfig()),
+		zapcore.Lock(os.Stdout),
+		atom), zap.AddCaller(), zap.AddStacktrace(zap.ErrorLevel))
+	defer logger.Sync()
+	log = logger.Sugar()
 
 	scanner := bufio.NewScanner(os.Stdin)
 	code := codeSafe
@@ -89,16 +102,19 @@ func main() {
 		inputUrl := scanner.Text()
 		_, err := safebrowsing.ParseURL(inputUrl)
 		if err != nil {
-			fmt.Fprintln(os.Stdout, err, inputUrl)
+			log.Warn(err, inputUrl)
 		} else {
 			threats = append(threats, &pb.ThreatEntry{Url: inputUrl})
 		}
 	}
 
 	if scanner.Err() != nil {
-		fmt.Fprintln(os.Stderr, "Unable to read input:", scanner.Err())
+		log.Error("unable to read input:", scanner.Err())
 		code |= codeInvalid
+	} else {
+		log.Info("finished reading input from std in")
 	}
+
 	reqData := &pb.FindFullHashesRequest{
 		Client: &pb.ClientInfo{
 			ClientId:      "NSRG",
@@ -114,27 +130,57 @@ func main() {
 
 	u, err := url.Parse(*serverURLFlag)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Invalid server URL")
+		log.Error("invalid server URL", err)
+		code |= codeInvalid
 	}
 	u.Path = threatMatchesPath
 
 	reqJsonBytes, err := json.Marshal(reqData)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Invalid threat info struct")
+		log.Error("invalid threat info struct:", err)
+		code |= codeInvalid
 	}
+
 	httpReq, err := http.NewRequest("POST", u.String(), bytes.NewReader(reqJsonBytes))
 	httpReq.Header.Add("Content-Type", "application/json")
 	client := &http.Client{}
 	httpResp, err := client.Do(httpReq)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "HTTP error: %s", err.Error())
+		log.Error("http error:", err)
+		code |= codeFailed
+	} else {
+		log.Info("successfully sent request")
 	}
 	defer httpResp.Body.Close()
 
-	fmt.Println("response Status:", httpResp.Status)
-	fmt.Println("response Headers:", httpResp.Header)
 	body, _ := ioutil.ReadAll(httpResp.Body)
-	fmt.Println("response Body:", string(body))
+
+	resp := new(pb.FindThreatMatchesResponse)
+	if err := json.Unmarshal(body, resp); err != nil {
+		log.Error(err)
+		code |= codeFailed
+	}
+
+	// open output file
+	outFile, err := os.Create(*outputFilenameFlag)
+	if err != nil {
+		log.Error(outFile)
+		code |= codeFailed
+	}
+	defer outFile.Close()
+
+	if len(resp.Matches) > 0 {
+		code |= codeUnsafe
+	}
+	w := csv.NewWriter(outFile)
+
+	for _, match := range resp.Matches {
+		if err := w.Write(match.StringSlice()); err != nil {
+			log.Error("csv writing error:", err)
+		}
+	}
+	log.Info("finished writing results to csv")
+	w.Flush()
 
 	os.Exit(code)
 }

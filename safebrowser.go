@@ -104,7 +104,7 @@ const (
 	DefaultRequestTimeout = time.Minute
 
 	// Maximum batch size for update API
-	MaxUpdateAPIBatchSize = 300 //TODO: test this
+	MaxUpdateAPIBatchSize = 400 //TODO: test this
 )
 
 // Errors specific to this package.
@@ -523,6 +523,7 @@ func (sb *SafeBrowser) LookupURLsContext(ctx context.Context, urls []string) (th
 		entriesToAdd := int(math.Min(float64(MaxUpdateAPIBatchSize), float64(totalEntries-currentIndex)))
 		sb.log.Printf("Making update request with %d entries", entriesToAdd)
 		req.ThreatInfo.ThreatEntries = entries[currentIndex : currentIndex+entriesToAdd]
+		time.Sleep(100 * time.Millisecond)
 		resp, err := sb.api.HashLookup(ctx, req)
 		if err != nil {
 			sb.log.Printf("HashLookup failure: %v", err)
