@@ -72,7 +72,7 @@ const (
 
 const (
 	threatMatchesPath = "/v4/threatMatches:find"
-	LookupBatchSize   = 20000
+	LookupBatchSize   = 100000
 )
 
 var log *zap.SugaredLogger
