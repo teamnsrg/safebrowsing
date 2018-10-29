@@ -121,6 +121,7 @@ func main() {
 		validURLCount += 1
 		if validURLCount%LookupBatchSize == 0 {
 			log.Infof("sending lookup request for lines %d to %d", previousLineCount, lineCount)
+			checkFullHashes(*serverURLFlag, threats, threatMatches, &wg)
 			threats = make([]*pb.ThreatEntry, 0)
 			previousLineCount = lineCount
 		}
@@ -128,6 +129,7 @@ func main() {
 
 	if len(threats) > 0 {
 		log.Infof("sending lookup request for lines %d to %d", previousLineCount, lineCount)
+		checkFullHashes(*serverURLFlag, threats, threatMatches, &wg)
 	}
 
 	if scanner.Err() != nil {
