@@ -112,7 +112,7 @@ func main() {
 		log.Error("unable to read input:", scanner.Err())
 		code |= codeInvalid
 	} else {
-		log.Info("finished reading input from std in")
+		log.Info("finished reading input from stdin")
 	}
 
 	reqData := &pb.FindFullHashesRequest{
@@ -154,6 +154,8 @@ func main() {
 	defer httpResp.Body.Close()
 
 	body, _ := ioutil.ReadAll(httpResp.Body)
+
+	log.Debug("response body:", string(body))
 
 	resp := new(pb.FindThreatMatchesResponse)
 	if err := json.Unmarshal(body, resp); err != nil {
