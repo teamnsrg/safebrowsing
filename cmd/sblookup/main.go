@@ -42,6 +42,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sync"
 
 	"github.com/teamnsrg/safebrowsing"
 )
@@ -77,6 +78,7 @@ const (
 
 const (
 	threatMatchesPath = "/v4/threatMatches:find"
+	LookupBatchSize   = 20000
 )
 
 var log *zap.SugaredLogger
@@ -107,23 +109,71 @@ func main() {
 
 	code := codeSafe
 	threats := make([]*pb.ThreatEntry, 0)
+	threatMatches := make(chan *pb.FindThreatMatchesResponse, LookupBatchSize)
+	var wg sync.WaitGroup
+	go writeOutput(threatMatches, *outputFilenameFlag, &wg)
+
+	validURLCount := 0
+	previousLineCount, lineCount := 1, 0
 	for scanner.Scan() {
+		lineCount += 1
 		inputUrl := scanner.Text()
 		_, err := safebrowsing.ParseURL(inputUrl)
 		if err != nil {
 			log.Warn(err, inputUrl)
-		} else {
-			threats = append(threats, &pb.ThreatEntry{Url: inputUrl})
+			continue
+		}
+
+		threats = append(threats, &pb.ThreatEntry{Url: inputUrl})
+		validURLCount += 1
+		if validURLCount%LookupBatchSize == 0 {
+			log.Infof("sending lookup request for lines %d to %d", previousLineCount, lineCount)
+			code |= checkFullHashes(*serverURLFlag, threats, threatMatches, &wg)
+			threats = make([]*pb.ThreatEntry, 0)
+			previousLineCount = lineCount
 		}
 	}
 
+	if len(threats) > 0 {
+		log.Infof("sending lookup request for lines %d to %d", previousLineCount, lineCount)
+		code |= checkFullHashes(*serverURLFlag, threats, threatMatches, &wg)
+	}
+
 	if scanner.Err() != nil {
-		log.Error("unable to read input:", scanner.Err())
+		log.Error("input read error:", scanner.Err())
 		code |= codeInvalid
 	} else {
 		log.Info("finished reading input from stdin")
 	}
 
+	wg.Wait()
+	close(threatMatches)
+	os.Exit(code)
+}
+
+func writeOutput(responses chan *pb.FindThreatMatchesResponse, outputFilename string, wg *sync.WaitGroup) {
+	// open output file
+	outFile, err := os.Create(outputFilename)
+	if err != nil {
+		log.Error(outFile)
+	}
+	defer outFile.Close()
+
+	w := csv.NewWriter(outFile)
+
+	for response := range responses {
+		for _, match := range response.Matches {
+			if err := w.Write(match.StringSlice()); err != nil {
+				log.Error("csv writing error:", err)
+			}
+		}
+		log.Info("results written to csv")
+		w.Flush()
+		wg.Done()
+	}
+}
+
+func checkFullHashes(serverURL string, entries []*pb.ThreatEntry, matches chan *pb.FindThreatMatchesResponse, wg *sync.WaitGroup) (code int) {
 	reqData := &pb.FindFullHashesRequest{
 		Client: &pb.ClientInfo{
 			ClientId:      "NSRG",
@@ -133,11 +183,11 @@ func main() {
 			PlatformTypes:    []pb.PlatformType{pb.PlatformType_PLATFORM_TYPE_UNSPECIFIED},
 			ThreatTypes:      []pb.ThreatType{pb.ThreatType_THREAT_TYPE_UNSPECIFIED},
 			ThreatEntryTypes: []pb.ThreatEntryType{pb.ThreatEntryType_THREAT_ENTRY_TYPE_UNSPECIFIED},
-			ThreatEntries:    threats,
+			ThreatEntries:    entries,
 		},
 	}
 
-	u, err := url.Parse(*serverURLFlag)
+	u, err := url.Parse(serverURL)
 	if err != nil {
 		log.Error("invalid server URL", err)
 		code |= codeInvalid
@@ -158,7 +208,7 @@ func main() {
 		log.Error("http error:", err)
 		code |= codeFailed
 	} else {
-		log.Info("successfully sent request")
+		log.Info("response received")
 	}
 	defer httpResp.Body.Close()
 
@@ -172,26 +222,7 @@ func main() {
 		code |= codeFailed
 	}
 
-	// open output file
-	outFile, err := os.Create(*outputFilenameFlag)
-	if err != nil {
-		log.Error(outFile)
-		code |= codeFailed
-	}
-	defer outFile.Close()
-
-	if len(resp.Matches) > 0 {
-		code |= codeUnsafe
-	}
-	w := csv.NewWriter(outFile)
-
-	for _, match := range resp.Matches {
-		if err := w.Write(match.StringSlice()); err != nil {
-			log.Error("csv writing error:", err)
-		}
-	}
-	log.Info("finished writing results to csv")
-	w.Flush()
-
-	os.Exit(code)
+	wg.Add(1)
+	matches <- resp
+	return code
 }
