@@ -104,7 +104,7 @@ const (
 	DefaultRequestTimeout = time.Minute
 
 	// Maximum batch size for update API
-	MaxUpdateAPIBatchSize = 400 //TODO: test this
+	MaxUpdateAPIBatchSize = 500 //TODO: test this
 )
 
 // Errors specific to this package.
@@ -521,7 +521,7 @@ func (sb *SafeBrowser) LookupURLsContext(ctx context.Context, urls []string) (th
 	copy(entries, req.ThreatInfo.ThreatEntries)
 	for currentIndex, totalEntries := 0, len(req.ThreatInfo.ThreatEntries); currentIndex < totalEntries; currentIndex += MaxUpdateAPIBatchSize {
 		entriesToAdd := int(math.Min(float64(MaxUpdateAPIBatchSize), float64(totalEntries-currentIndex)))
-		sb.log.Printf("Making update request with %d entries", entriesToAdd)
+		sb.log.Printf("Making fullhash request with %d entries", entriesToAdd)
 		req.ThreatInfo.ThreatEntries = entries[currentIndex : currentIndex+entriesToAdd]
 		time.Sleep(100 * time.Millisecond)
 		resp, err := sb.api.HashLookup(ctx, req)
