@@ -290,6 +290,9 @@ type ThreatMatch struct {
 	CacheDuration *google_protobuf.Duration `protobuf:"bytes,5,opt,name=cache_duration,json=cacheDuration" json:"cache_duration,omitempty"`
 }
 
+func (m *ThreatMatch) StringSlice() []string {
+	return []string{m.ThreatType.String(), m.PlatformType.String(), m.ThreatEntryType.String(), m.Threat.GetUrl(), m.ThreatEntryMetadata.String()}
+}
 func (m *ThreatMatch) Reset()                    { *m = ThreatMatch{} }
 func (m *ThreatMatch) String() string            { return proto.CompactTextString(m) }
 func (*ThreatMatch) ProtoMessage()               {}
