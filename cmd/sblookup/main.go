@@ -60,14 +60,7 @@ Tool reads one URL per line from STDIN and checks every URL against the
 Safe Browsing API. The Safe or Unsafe verdict is printed to STDOUT. If an error
 occurred, debug information may be printed to STDERR.
 
-Exit codes (bitwise OR of following codes):
-  0  if and only if all URLs were looked up and are safe.
-  1  if at least one URL is not safe.
-  2  if at least one URL lookup failed.
-  4  if the input was invalid.
-
 Usage: %s -apikey=$APIKEY
-
 `
 
 const (
@@ -108,7 +101,6 @@ func main() {
 		scanner = bufio.NewScanner(inputFile)
 	}
 
-	code := codeSafe
 	threats := make([]*pb.ThreatEntry, 0)
 	threatMatches := make(chan *pb.FindThreatMatchesResponse, LookupBatchSize)
 	var wg sync.WaitGroup
@@ -129,7 +121,6 @@ func main() {
 		validURLCount += 1
 		if validURLCount%LookupBatchSize == 0 {
 			log.Infof("sending lookup request for lines %d to %d", previousLineCount, lineCount)
-			code |= checkFullHashes(*serverURLFlag, threats, threatMatches, &wg)
 			threats = make([]*pb.ThreatEntry, 0)
 			previousLineCount = lineCount
 		}
@@ -137,19 +128,16 @@ func main() {
 
 	if len(threats) > 0 {
 		log.Infof("sending lookup request for lines %d to %d", previousLineCount, lineCount)
-		code |= checkFullHashes(*serverURLFlag, threats, threatMatches, &wg)
 	}
 
 	if scanner.Err() != nil {
 		log.Error("input read error:", scanner.Err())
-		code |= codeInvalid
 	} else {
 		log.Info("finished reading input from stdin")
 	}
 
 	wg.Wait()
 	close(threatMatches)
-	os.Exit(code)
 }
 
 func writeOutput(responses chan *pb.FindThreatMatchesResponse, outputFilename string, wg *sync.WaitGroup) {
@@ -174,7 +162,7 @@ func writeOutput(responses chan *pb.FindThreatMatchesResponse, outputFilename st
 	}
 }
 
-func checkFullHashes(serverURL string, entries []*pb.ThreatEntry, matches chan *pb.FindThreatMatchesResponse, wg *sync.WaitGroup) (code int) {
+func checkFullHashes(serverURL string, entries []*pb.ThreatEntry, matches chan *pb.FindThreatMatchesResponse, wg *sync.WaitGroup) {
 	reqData := &pb.FindFullHashesRequest{
 		Client: &pb.ClientInfo{
 			ClientId:      "NSRG",
@@ -190,15 +178,13 @@ func checkFullHashes(serverURL string, entries []*pb.ThreatEntry, matches chan *
 
 	u, err := url.Parse(serverURL)
 	if err != nil {
-		log.Error("invalid server URL", err)
-		code |= codeInvalid
+		log.Error("invalid server URL: ", err)
 	}
 	u.Path = threatMatchesPath
 
 	reqJsonBytes, err := json.Marshal(reqData)
 	if err != nil {
-		log.Error("invalid threat info struct:", err)
-		code |= codeInvalid
+		log.Error("invalid threat info struct: ", err)
 	}
 
 	httpReq, err := http.NewRequest("POST", u.String(), bytes.NewReader(reqJsonBytes))
@@ -206,8 +192,7 @@ func checkFullHashes(serverURL string, entries []*pb.ThreatEntry, matches chan *
 	client := &http.Client{}
 	httpResp, err := client.Do(httpReq)
 	if err != nil {
-		log.Error("http error:", err)
-		code |= codeFailed
+		log.Error("http error: ", err)
 	} else {
 		log.Info("response received")
 	}
@@ -215,15 +200,13 @@ func checkFullHashes(serverURL string, entries []*pb.ThreatEntry, matches chan *
 
 	body, _ := ioutil.ReadAll(httpResp.Body)
 
-	log.Debug("response body:", string(body))
+	log.Debug("response body: ", string(body))
 
 	resp := new(pb.FindThreatMatchesResponse)
 	if err := json.Unmarshal(body, resp); err != nil {
 		log.Error(err)
-		code |= codeFailed
 	}
 
 	wg.Add(1)
 	matches <- resp
-	return code
 }
