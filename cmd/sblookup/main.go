@@ -35,6 +35,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"flag"
+	"fmt"
 	pb "github.com/teamnsrg/safebrowsing/internal/safebrowsing_proto"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -85,7 +86,7 @@ var log *zap.SugaredLogger
 
 func main() {
 	flag.Usage = func() {
-		log.Fatal(usage, os.Args[0])
+		fmt.Fprintf(os.Stderr, usage, os.Args[0])
 		flag.PrintDefaults()
 	}
 	flag.Parse()
