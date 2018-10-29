@@ -49,6 +49,7 @@ import (
 var (
 	serverURLFlag      = flag.String("server", safebrowsing.DefaultServerURL, "Safebrowsing API server address.")
 	outputFilenameFlag = flag.String("output", "sbresults.txt", "Output file for safebrowsing results.")
+	inputFilenameFlag  = flag.String("input", "-", "Input file of urls to check against safebrowsing.")
 )
 
 const usage = `sblookup: command-line tool to lookup URLs with Safe Browsing.
@@ -95,7 +96,15 @@ func main() {
 	defer logger.Sync()
 	log = logger.Sugar()
 
-	scanner := bufio.NewScanner(os.Stdin)
+	var scanner *bufio.Scanner
+	if *inputFilenameFlag == "-" {
+		scanner = bufio.NewScanner(os.Stdin)
+	} else {
+		inputFile, _ := os.Open(*inputFilenameFlag)
+		defer inputFile.Close()
+		scanner = bufio.NewScanner(inputFile)
+	}
+
 	code := codeSafe
 	threats := make([]*pb.ThreatEntry, 0)
 	for scanner.Scan() {
