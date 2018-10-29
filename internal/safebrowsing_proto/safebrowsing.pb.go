@@ -30,9 +30,14 @@ It has these top-level messages:
 */
 package safebrowsing_proto
 
-import proto "github.com/golang/protobuf/proto"
-import fmt "fmt"
-import math "math"
+import (
+	"encoding/json"
+	"errors"
+	"github.com/golang/protobuf/proto"
+	"time"
+)
+import "fmt"
+import "math"
 import google_protobuf "github.com/golang/protobuf/ptypes/duration"
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -80,6 +85,7 @@ var ThreatType_value = map[string]int32{
 func (x ThreatType) String() string {
 	return proto.EnumName(ThreatType_name, int32(x))
 }
+
 func (ThreatType) EnumDescriptor() ([]byte, []int) { return fileDescriptor0, []int{0} }
 
 // Types of platforms.
@@ -288,6 +294,41 @@ type ThreatMatch struct {
 	// The cache lifetime for the returned match. Clients must not cache this
 	// response for more than this duration to avoid false positives.
 	CacheDuration *google_protobuf.Duration `protobuf:"bytes,5,opt,name=cache_duration,json=cacheDuration" json:"cache_duration,omitempty"`
+}
+
+func (m *ThreatMatch) StringSlice() []string {
+	metadataStr := ""
+	if m.ThreatEntryMetadata != nil {
+		metadataStr = m.ThreatEntryMetadata.String()
+	}
+
+	timestampStr := fmt.Sprintf("%d", time.Now().Unix())
+
+	return []string{m.Threat.GetUrl(), timestampStr, m.ThreatType.String(), m.PlatformType.String(), m.ThreatEntryType.String(), metadataStr}
+}
+
+func (m *ThreatMatch) UnmarshalJSON(data []byte) error {
+	intermediate := &struct {
+		ThreatType          string                    `json:"threatType,omitempty"`
+		PlatformType        string                    `json:"platformType,omitempty"`
+		ThreatEntryType     string                    `json:"threatEntryType,omitempty"`
+		Threat              *ThreatEntry              `json:"threat,omitempty"`
+		ThreatEntryMetadata *ThreatEntryMetadata      `json:"threatEntryMetadata,omitempty"`
+		CacheDuration       *google_protobuf.Duration `json:"cacheDuration,omitempty"`
+	}{}
+
+	if err := json.Unmarshal(data, intermediate); err != nil {
+		return errors.New("unable to parse intermediate json: " + err.Error())
+	}
+
+	m.ThreatType = ThreatType(ThreatType_value[intermediate.ThreatType])
+	m.PlatformType = PlatformType(PlatformType_value[intermediate.PlatformType])
+	m.ThreatEntryType = ThreatEntryType(ThreatEntryType_value[intermediate.ThreatEntryType])
+	m.Threat = intermediate.Threat
+	m.ThreatEntryMetadata = intermediate.ThreatEntryMetadata
+	m.CacheDuration = intermediate.CacheDuration
+
+	return nil
 }
 
 func (m *ThreatMatch) Reset()                    { *m = ThreatMatch{} }

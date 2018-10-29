@@ -77,6 +77,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"math"
 	"sync/atomic"
 	"time"
 
@@ -91,7 +92,7 @@ const (
 
 	// DefaultUpdatePeriod is the default period for how often SafeBrowser will
 	// reload its blacklist database.
-	DefaultUpdatePeriod = 5 * time.Minute
+	DefaultUpdatePeriod = 30 * time.Minute
 
 	// DefaultID and DefaultVersion are the default client ID and Version
 	// strings to send with every API call.
@@ -101,6 +102,9 @@ const (
 	// DefaultRequestTimeout is the default amount of time a single
 	// api request can take.
 	DefaultRequestTimeout = time.Minute
+
+	// Maximum batch size for update API
+	MaxUpdateAPIBatchSize = 400 //TODO: test this
 )
 
 // Errors specific to this package.
@@ -513,7 +517,13 @@ func (sb *SafeBrowser) LookupURLsContext(ctx context.Context, urls []string) (th
 	}
 
 	// Actually query the Safe Browsing API for exact full hash matches.
-	if len(req.ThreatInfo.ThreatEntries) != 0 {
+	entries := make([]*pb.ThreatEntry, len(req.ThreatInfo.ThreatEntries))
+	copy(entries, req.ThreatInfo.ThreatEntries)
+	for currentIndex, totalEntries := 0, len(req.ThreatInfo.ThreatEntries); currentIndex < totalEntries; currentIndex += MaxUpdateAPIBatchSize {
+		entriesToAdd := int(math.Min(float64(MaxUpdateAPIBatchSize), float64(totalEntries-currentIndex)))
+		sb.log.Printf("Making update request with %d entries", entriesToAdd)
+		req.ThreatInfo.ThreatEntries = entries[currentIndex : currentIndex+entriesToAdd]
+		time.Sleep(100 * time.Millisecond)
 		resp, err := sb.api.HashLookup(ctx, req)
 		if err != nil {
 			sb.log.Printf("HashLookup failure: %v", err)
@@ -547,8 +557,9 @@ func (sb *SafeBrowser) LookupURLsContext(ctx context.Context, urls []string) (th
 				})
 			}
 		}
-		atomic.AddInt64(&sb.stats.QueriesByAPI, 1)
 	}
+	atomic.AddInt64(&sb.stats.QueriesByAPI, 1)
+
 	return threats, nil
 }
 

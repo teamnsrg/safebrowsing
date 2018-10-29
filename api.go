@@ -93,10 +93,6 @@ func (a *netAPI) doRequest(ctx context.Context, requestPath string, req proto.Me
 		return err
 	}
 
-	//reqBytes, _ := httputil.DumpRequest(httpReq, true)
-	//respBytes, _ := httputil.DumpResponse(httpResp, true)
-	//fmt.Println(string(reqBytes[:]))
-	//fmt.Println(string(respBytes[:]))
 	defer httpResp.Body.Close()
 	if httpResp.StatusCode != 200 {
 		return fmt.Errorf("safebrowsing: unexpected server response code: %d", httpResp.StatusCode)
