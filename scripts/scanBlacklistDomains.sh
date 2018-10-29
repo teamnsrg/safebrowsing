@@ -23,7 +23,3 @@ fi
 cd $EXEC_PATH
 go build
 $EXEC_PATH/sblookup -server http://localhost:8080 -input $DOWNLOAD_PATH/$DATETIME-$HOSTNAMES_FILE -output $DOWNLOAD_PATH/$DATETIME-$RESULTS_FILE > $LOG_PATH/$DATETIME.log 2>&1
-
-if [ "$1" != 0 ]; then
-    cat $LOG_PATH/$DATETIME.log | mail -s "Safebrowsing Script Failed" zanema2@illinois.edu
-fi
