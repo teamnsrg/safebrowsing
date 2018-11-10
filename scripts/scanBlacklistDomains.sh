@@ -11,9 +11,10 @@ URLS_FILE="urls.txt"
 RESULTS_FILE="results.txt"
 LOG_PATH="/data1/nsrg/domain_blacklists/safebrowsing/logs"
 
+mkdir -p $DOWNLOAD_PATH/$DATE
 
 # Export hostnames from redis
-redis-cli --raw smembers urls > $DOWNLOAD_PATH/$DATETIME-$URLS_FILE
+redis-cli --raw smembers urls > $DOWNLOAD_PATH/$DATE/$DATETIME-$URLS_FILE
 
 exit_status=$?
 if [ $exit_status -ne 0 ]; then
@@ -22,4 +23,4 @@ fi
 
 cd $EXEC_PATH
 go build
-$EXEC_PATH/sblookup -server http://localhost:8080 -input $DOWNLOAD_PATH/$DATETIME-$URLS_FILE -output $DOWNLOAD_PATH/$DATETIME-$RESULTS_FILE > $LOG_PATH/$DATETIME.log 2>&1
+$EXEC_PATH/sblookup -server http://localhost:8080 -input $DOWNLOAD_PATH/$DATE/$DATETIME-$URLS_FILE -output $DOWNLOAD_PATH/$DATE/$DATETIME-$RESULTS_FILE > $LOG_PATH/$DATETIME.log 2>&1
